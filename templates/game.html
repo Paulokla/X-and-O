@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Super Tic-Tac-Toe</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <!-- If user not logged in show login -->
+  {% if not username or username == "Guest" %}
+  <main class="auth-wrap">
+    <form id="login-form" method="POST" action="/game">
+      <h1>Super Tic-Tac-Toe</h1>
+
+      <label class="label">Username</label>
+      <input name="username" type="text" required placeholder="Your display name" />
+
+      <label class="label">Board size</label>
+      <select name="board_size">
+        <option value="3">3 x 3 (classic)</option>
+        <option value="4">4 x 4</option>
+        <option value="5">5 x 5</option>
+      </select>
+
+      <label class="label">Mode</label>
+      <div class="radio-row">
+        <label><input name="mode" value="solo" type="radio" checked> Play solo (vs CPU)</label>
+        <label><input name="mode" value="room" type="radio"> Play with a friend (room)</label>
+      </div>
+
+      <label class="label">Room code (optional) — enter to join</label>
+      <input name="room_code" type="text" placeholder="Leave blank to create a room" />
+
+      <button class="btn-primary" type="submit">Start</button>
+      <p class="small muted">You can play solo or enter a room code and share with a friend.</p>
+    </form>
+  </main>
+
+  {% else %}
+  <!-- Game UI -->
+  <div class="app-grid">
+    <aside class="left-panel">
+      <div class="profile">
+        <h3>{{ username }}</h3>
+        <p class="muted">Room: <span id="room-code">Connecting...</span></p>
+        <p id="player-symbol" class="muted"></p>
+      </div>
+
+      <div class="controls">
+        <div class="section">
+          <h4>Game</h4>
+          <button id="new-game-btn" class="btn">New Game</button>
+          <label class="small muted">Board size: <strong id="board-size-label">{{ board_size }}</strong></label>
+        </div>
+
+        <div class="section">
+          <h4>Power-ups</h4>
+          <button id="power-block" class="btn">Block Opponent (<span id="count-block">1</span>)</button>
+          <button id="power-clear" class="btn">Clear Cell (<span id="count-clear">1</span>)</button>
+          <p class="small muted">Block: skip opponent's next move. Clear: remove one occupied cell.</p>
+        </div>
+
+        <div class="section history">
+          <h4>Your History</h4>
+          <button id="refresh-history" class="btn small">Refresh</button>
+          <div id="history-list" class="history-list">Loading...</div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <h2>Super Tic-Tac-Toe</h2>
+        <div class="status">
+          <span id="turn-indicator">Waiting for players...</span>
+        </div>
+      </header>
+
+      <section class="board-wrap">
+        <div id="board" class="board" aria-label="game-board" ></div>
+      </section>
+
+      <section class="chat-wrap">
+        <div class="chat-header"><h4>Chat</h4></div>
+        <div id="chat-messages" class="chat-messages"></div>
+        <div class="chat-input">
+          <input id="chat-input" type="text" placeholder="Type a message..." />
+          <button id="send-chat" class="btn">Send</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Pass server-side values into JS -->
+  <script>
+    const username = {{ username|tojson }};
+    const boardSize = {{ board_size|tojson }};
+    const roomCode = {{ room_code|default('null')|tojson }};
+    const mode = {{ mode|tojson }};
+  </script>
+
+  <!-- Socket.IO client -->
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js" crossorigin="anonymous"></script>
+  <script src="{{ url_for('static', filename='js/game.js') }}"></script>
+  {% endif %}
+</body>
+</html>

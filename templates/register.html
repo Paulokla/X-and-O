@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Registration</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h2>Student Registration</h2>
+        <form id="studentForm">
+            <input type="text" name="name" placeholder="Full Name" required>
+            <input type="date" name="dob" required>
+            <select name="gender" required>
+                <option value="">Select Gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+            </select>
+            <input type="text" name="faculty" placeholder="Faculty" required>
+            <input type="text" name="department" placeholder="Department" required>
+            <input type="number" name="year" placeholder="Year of Admission" required>
+            <button type="submit">Register</button>
+        </form>
+        <p id="responseMsg"></p>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
