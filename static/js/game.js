@@ -61,6 +61,7 @@ async function loadHistory(){
     console.error('History load error', err);
   }
 }
+
 async function saveHistory(entry){
   try {
     await fetch('/history', {
@@ -364,14 +365,14 @@ if (socket){
     if (data.status === 'win'){
       if (data.winner === username){
         alert('🎉 You WON!');
-        await saveHistory({ username, opponent: data.loser || 'opponent', mode:'multiplayer', result:'win', date: new Date().toISOString(), board_size: boardSize });
+        // await saveHistory({ username, opponent: data.loser || 'opponent', mode:'multiplayer', result:'win', date: new Date().toISOString(), board_size: boardSize });
       } else {
         alert(`😢 You lost. Winner: ${data.winner}`);
-        await saveHistory({ username, opponent: data.winner || 'opponent', mode:'multiplayer', result:'loss', date: new Date().toISOString(), board_size: boardSize });
+        // await saveHistory({ username, opponent: data.winner || 'opponent', mode:'multiplayer', result:'loss', date: new Date().toISOString(), board_size: boardSize });
       }
     } else if (data.status === 'draw'){
       alert("🤝 It's a draw!");
-      await saveHistory({ username, opponent: 'opponent', mode:'multiplayer', result:'draw', date: new Date().toISOString(), board_size: boardSize });
+      // await saveHistory({ username, opponent: 'opponent', mode:'multiplayer', result:'draw', date: new Date().toISOString(), board_size: boardSize });
     }
   });
 
@@ -429,6 +430,7 @@ function init(){
   //   setRoomCode(roomCode);
   //   if (socket && socket.connected) socket.emit('join_game', { username, board_size: boardSize, room: roomCode });
   // }
+  console.log(mode)
   if (mode === 'solo') {
     startLocalGame(Number(boardSize));
   } else {

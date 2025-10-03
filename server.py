@@ -16,9 +16,11 @@ DB_PATH = 'database.db'
 
 # ---- Database init ----
 
+
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
+        # c.execute("DROP TABLE IF EXISTS leaderboard;")
         # history: store user's games
         c.execute("""
         CREATE TABLE IF NOT EXISTS history (
@@ -64,6 +66,11 @@ def init_db():
 
 init_db()
 
+with sqlite3.connect(DB_PATH) as conn:
+    c = conn.cursor()
+    c.execute("PRAGMA table_info(leaderboard);")
+    print(c.fetchall())
+
 # ---- Helpers: DB ----
 def add_history_entry(entry):
     # entry: dict with username, opponent, mode, result, board_size, date
@@ -99,11 +106,11 @@ def update_leaderboard(username, points=10):
         # try insert; if exists update
         c.execute("""
             INSERT INTO leaderboard (username, score, wins)
-            VALUES (?, ?, 1)
+            VALUES (?, ?, ?)
             ON CONFLICT(username) DO UPDATE SET
                 score = score + excluded.score,
                 wins = wins + 1
-        """, (username, points))
+        """, (username, points,1))
         conn.commit()
 
 # ---- Game utilities ----
@@ -326,6 +333,7 @@ def handle_move(data):
     x = int(data.get('x'))
     y = int(data.get('y'))
     username = data.get('username')
+    # print(username)
 
     if room not in games:
         emit('game_message', {'message': 'Game room not found.'}, room=request.sid)
@@ -381,6 +389,11 @@ def handle_move(data):
     # place move if empty
     if game['board'][x][y] is None:
         game['board'][x][y] = current_turn
+        
+        # normal turn swap
+        game['turn'] = 'O' if current_turn == 'X' else 'X'
+        emit('game_update', game, room=room)
+        
 
         # check win based on win length
         win_len = get_win_len(size)
@@ -411,17 +424,17 @@ def handle_move(data):
         if is_board_full(game['board']):
             ts = datetime.datetime.utcnow().isoformat()
             # save draw history for all players
-            for p in game['players']:
-                add_history_entry({'username': p, 'opponent': None, 'mode': 'multiplayer', 'result': 'draw', 'board_size': size, 'date': ts})
+           
+            add_history_entry({'username': game['players'][0], 'opponent': game['players'][1], 'mode': 'multiplayer', 'result': 'draw', 'board_size': size, 'date': ts})
             emit('game_over', {'winner': None, 'status': 'draw'}, room=room)
+            
+            # reset board
             game['board'] = new_empty_board(size)
             game['turn'] = 'X'
             emit('game_update', game, room=room)
             return
 
-        # normal turn swap
-        game['turn'] = 'O' if current_turn == 'X' else 'X'
-        emit('game_update', game, room=room)
+        
 
 @socketio.on('use_power_up')
 def handle_powerup(data):
