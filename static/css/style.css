@@ -76,11 +76,26 @@ body{
 }
 .left-panel .profile h3{margin:0}
 .left-panel .muted{color:var(--muted);font-size:13px}
+.stats{margin-top:8px;padding-top:8px;border-top:1px dashed #f0ebfc}
 .controls{margin-top:12px}
 .section{margin-top:12px;padding-top:10px;border-top:1px solid #faf6ff}
 .section h4{margin:0 0 8px;font-size:14px;color:var(--purple-dark)}
 .btn{display:inline-block;padding:8px 12px;border-radius:8px;border:0;background:var(--accent);color:#fff;cursor:pointer;font-weight:600}
 .btn.small{padding:6px 8px;font-size:13px}
+.btn:disabled{opacity:0.6;cursor:not-allowed}
+
+/* Exit button specific styles */
+.btn-exit{
+  background: #d84315 !important;
+  margin-top: 8px;
+  width: 100%;
+}
+
+.btn-exit:hover{
+  background: #bf360c !important;
+  transform: translateY(-1px);
+}
+
 .history-list{max-height:160px;overflow:auto;margin-top:8px;padding:8px;border-radius:8px;border:1px solid #f0ebfc;background:#faf8ff;font-size:13px}
 .history-list .item{padding:6px 8px;border-bottom:1px dashed #efe6ff}
 .history-list .item:last-child{border-bottom:0}
@@ -129,6 +144,42 @@ body{
 .chat-input{display:flex;gap:8px;margin-top:8px}
 .chat-input input{flex:1;padding:8px;border-radius:8px;border:1px solid #ece8fb}
 .chat-input button{padding:8px 12px;border-radius:8px;border:0;background:var(--purple);color:#fff;cursor:pointer}
+
+/* Game Dialog Styles */
+#game-result-dialog {
+  font-family: inherit;
+}
+
+#game-result-dialog h2 {
+  font-size: 24px;
+  font-weight: bold;
+}
+
+#game-result-dialog p {
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+/* Exit Confirmation Dialog */
+#exit-confirmation-dialog h2 {
+  font-size: 24px;
+  font-weight: bold;
+}
+
+#exit-confirmation-dialog p {
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+/* Power-up button animations */
+.btn.power-up {
+  transition: all 0.3s ease;
+}
+
+.btn.power-up:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(107, 53, 183, 0.3);
+}
 
 /* small screens */
 @media (max-width:900px){

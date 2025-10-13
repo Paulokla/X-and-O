@@ -25,12 +25,14 @@
 
       <label class="label">Mode</label>
       <div class="radio-row">
-        <label><input name="mode" value="solo" type="radio" checked> Play solo (vs CPU)</label>
-        <label><input name="mode" value="room" type="radio"> Play with a friend (room)</label>
+        <label><input name="mode" value="solo" type="radio" id="mode-solo" checked> Play solo (vs CPU)</label>
+        <label><input name="mode" value="multiplayer" type="radio" id="mode-multi"> Play with a friend (room)</label>
       </div>
 
-      <label class="label">Room code (optional) — enter to join</label>
-      <input name="room_code" type="text" placeholder="Leave blank to create a room" />
+      <div id="room-code-section" style="display: none;">
+        <label class="label">Room code (optional) — enter to join</label>
+        <input name="room_code" type="text" placeholder="Leave blank to create a room" />
+      </div>
 
       <button class="btn-primary" type="submit">Start</button>
       <p class="small muted">You can play solo or enter a room code and share with a friend.</p>
@@ -45,12 +47,17 @@
         <h3>{{ username }}</h3>
         <p class="muted">Room: <span id="room-code">Connecting...</span></p>
         <p id="player-symbol" class="muted"></p>
+        <div id="game-stats" class="stats">
+          <p class="small muted">Wins: <span id="stat-wins">0</span> | Losses: <span id="stat-losses">0</span> | Draws: <span id="stat-draws">0</span></p>
+          <p class="small muted">Current Streak: <span id="stat-streak">0</span></p>
+        </div>
       </div>
 
       <div class="controls">
         <div class="section">
           <h4>Game</h4>
           <button id="new-game-btn" class="btn">New Game</button>
+          <button id="exit-btn" class="btn btn-exit">Exit Game</button>
           <label class="small muted">Board size: <strong id="board-size-label">{{ board_size }}</strong></label>
         </div>
 
@@ -81,7 +88,8 @@
         <div id="board" class="board" aria-label="game-board" ></div>
       </section>
 
-      <section class="chat-wrap">
+      <!-- Chat section - only show for multiplayer -->
+      <section id="chat-section" class="chat-wrap" style="display: none;">
         <div class="chat-header"><h4>Chat</h4></div>
         <div id="chat-messages" class="chat-messages"></div>
         <div class="chat-input">
@@ -104,5 +112,28 @@
   <script src="https://cdn.socket.io/4.5.4/socket.io.min.js" crossorigin="anonymous"></script>
   <script src="{{ url_for('static', filename='js/game.js') }}"></script>
   {% endif %}
+
+  <!-- Add mode selection script IN THE RIGHT PLACE -->
+  <script>
+    // Show/hide room code based on mode selection - RUNS ON BOTH PAGES
+    document.addEventListener('DOMContentLoaded', function() {
+      const soloRadio = document.getElementById('mode-solo');
+      const multiRadio = document.getElementById('mode-multi');
+      const roomSection = document.getElementById('room-code-section');
+      
+      if (soloRadio && multiRadio && roomSection) {
+        // Set initial state
+        roomSection.style.display = soloRadio.checked ? 'none' : 'block';
+        
+        soloRadio.addEventListener('change', function() {
+          roomSection.style.display = 'none';
+        });
+        
+        multiRadio.addEventListener('change', function() {
+          roomSection.style.display = 'block';
+        });
+      }
+    });
+  </script>
 </body>
 </html>

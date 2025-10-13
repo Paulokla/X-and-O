@@ -1,8 +1,3 @@
-/* static/js/game.js
-   Fixed version: renders winning move before disabling clicks,
-   AI works, solo power-ups (block/clear) handled, multiplayer unchanged.
-*/
-
 // ----- Setup / globals -----
 const socket = (typeof io !== 'undefined') ? io() : null;
 const BOARD = document.getElementById('board');
@@ -17,14 +12,23 @@ const POWER_BLOCK_BTN = document.getElementById('power-block');
 const POWER_CLEAR_BTN = document.getElementById('power-clear');
 const NEW_GAME_BTN = document.getElementById('new-game-btn');
 const REFRESH_HISTORY_BTN = document.getElementById('refresh-history');
+const EXIT_BTN = document.getElementById('exit-btn');
 const COUNT_BLOCK = document.getElementById('count-block');
 const COUNT_CLEAR = document.getElementById('count-clear');
 const BOARD_LABEL = document.getElementById('board-size-label');
+const CHAT_SECTION = document.getElementById('chat-section');
+
+// Game statistics elements
+const STAT_WINS = document.getElementById('stat-wins');
+const STAT_LOSSES = document.getElementById('stat-losses');
+const STAT_DRAWS = document.getElementById('stat-draws');
+const STAT_STREAK = document.getElementById('stat-streak');
 
 // injected by template
 if (typeof username === 'undefined') window.username = 'Guest';
 if (typeof boardSize === 'undefined') window.boardSize = 3;
 if (typeof roomCode === 'undefined') window.roomCode = null;
+if (typeof mode === 'undefined') window.mode = 'solo';
 
 // local state
 let localGame = null;      // object when solo is active, null otherwise
@@ -32,22 +36,330 @@ let currentRoom = null;    // room code for multiplayer
 let mySymbol = null;       // 'X' or 'O' in multiplayer; 'X' in solo
 let isSolo = false;
 let myPowerups = { block: 1, clear: 1 }; // default local powerups (persisted per-game)
+let gameStats = {          // game statistics
+  wins: 0,
+  losses: 0,
+  draws: 0,
+  streak: 0
+};
 
-
-if (mode == "solo") {
-  // local state
-  localGame = "active";      // object when solo is active, null otherwise
-  currentRoom = null;    // room code for multiplayer
-  mySymbol = "X";       // 'X' or 'O' in multiplayer; 'X' in solo
-  isSolo = true;
+// ----- Exit Game Functionality -----
+function setupExitButton() {
+  if (EXIT_BTN) {
+    EXIT_BTN.addEventListener('click', showExitConfirmation);
+  }
 }
 
+function showExitConfirmation() {
+  const dialog = document.createElement('div');
+  dialog.id = 'exit-confirmation-dialog';
+  dialog.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  `;
+  
+  const content = document.createElement('div');
+  content.style.cssText = `
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  `;
+  
+  const titleEl = document.createElement('h2');
+  titleEl.textContent = 'Exit Game';
+  titleEl.style.color = '#d84315';
+  titleEl.style.margin = '0 0 15px 0';
+  
+  const messageEl = document.createElement('p');
+  messageEl.textContent = 'Are you sure you want to exit the game?';
+  messageEl.style.margin = '0 0 20px 0';
+  
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.cssText = `
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  `;
+  
+  const yesButton = document.createElement('button');
+  yesButton.textContent = 'Yes, Exit';
+  yesButton.style.cssText = `
+    background: #d84315;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+  `;
+  
+  const noButton = document.createElement('button');
+  noButton.textContent = 'No, Continue';
+  noButton.style.cssText = `
+    background: var(--purple);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+  `;
+  
+  yesButton.addEventListener('click', () => {
+    // For multiplayer, leave the room
+    if (!isSolo && currentRoom && currentRoom !== 'LOCAL' && socket) {
+      socket.emit('leave_room', { room: currentRoom, username });
+    }
+    
+    // Redirect to logout endpoint to clear session
+    window.location.href = '/logout';
+  });
+  
+  noButton.addEventListener('click', () => {
+    dialog.remove();
+  });
+  
+  // Also close dialog when clicking outside
+  dialog.addEventListener('click', (e) => {
+    if (e.target === dialog) {
+      dialog.remove();
+    }
+  });
+  
+  buttonContainer.appendChild(noButton);
+  buttonContainer.appendChild(yesButton);
+  
+  content.appendChild(titleEl);
+  content.appendChild(messageEl);
+  content.appendChild(buttonContainer);
+  dialog.appendChild(content);
+  document.body.appendChild(dialog);
+}
 
+// ----- New Game Confirmation -----
+function showNewGameConfirmation(requestedBy) {
+  const dialog = document.createElement('div');
+  dialog.id = 'new-game-confirmation-dialog';
+  dialog.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  `;
+  
+  const content = document.createElement('div');
+  content.style.cssText = `
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  `;
+  
+  const titleEl = document.createElement('h2');
+  titleEl.textContent = 'New Game Request';
+  titleEl.style.color = '#6b35b7';
+  titleEl.style.margin = '0 0 15px 0';
+  
+  const messageEl = document.createElement('p');
+  messageEl.textContent = `${requestedBy} wants to start a new game. Do you agree?`;
+  messageEl.style.margin = '0 0 20px 0';
+  
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.cssText = `
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  `;
+  
+  const yesButton = document.createElement('button');
+  yesButton.textContent = 'Yes, Start New Game';
+  yesButton.style.cssText = `
+    background: #2e7d32;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+  `;
+  
+  const noButton = document.createElement('button');
+  noButton.textContent = 'No, Continue Current';
+  noButton.style.cssText = `
+    background: #d84315;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+  `;
+  
+  yesButton.addEventListener('click', () => {
+    // Confirm new game
+    socket.emit('confirm_new_game', { room: currentRoom, username });
+    dialog.remove();
+  });
+  
+  noButton.addEventListener('click', () => {
+    // Cancel new game request
+    socket.emit('cancel_new_game', { room: currentRoom, username });
+    dialog.remove();
+  });
+  
+  // Also close dialog when clicking outside
+  dialog.addEventListener('click', (e) => {
+    if (e.target === dialog) {
+      socket.emit('cancel_new_game', { room: currentRoom, username });
+      dialog.remove();
+    }
+  });
+  
+  buttonContainer.appendChild(noButton);
+  buttonContainer.appendChild(yesButton);
+  
+  content.appendChild(titleEl);
+  content.appendChild(messageEl);
+  content.appendChild(buttonContainer);
+  dialog.appendChild(content);
+  document.body.appendChild(dialog);
+}
+
+// ----- Chat Section Toggle -----
+function toggleChatSection(show) {
+  if (CHAT_SECTION) {
+    CHAT_SECTION.style.display = show ? 'block' : 'none';
+  }
+}
+
+// Load stats from localStorage
+function loadStats() {
+  const saved = localStorage.getItem('gameStats');
+  if (saved) {
+    gameStats = JSON.parse(saved);
+    updateStatsDisplay();
+  }
+}
+
+// Update stats display
+function updateStatsDisplay() {
+  if (STAT_WINS) STAT_WINS.textContent = gameStats.wins;
+  if (STAT_LOSSES) STAT_LOSSES.textContent = gameStats.losses;
+  if (STAT_DRAWS) STAT_DRAWS.textContent = gameStats.draws;
+  if (STAT_STREAK) STAT_STREAK.textContent = gameStats.streak;
+}
+
+// Update game statistics
+function updateStats(result) {
+  if (result === 'win') {
+    gameStats.wins++;
+    gameStats.streak++;
+  } else if (result === 'loss') {
+    gameStats.losses++;
+    gameStats.streak = 0;
+  } else {
+    gameStats.draws++;
+    gameStats.streak = 0;
+  }
+  localStorage.setItem('gameStats', JSON.stringify(gameStats));
+  updateStatsDisplay();
+}
 
 // small helper for element creation
 function e(tag, cls) { const el = document.createElement(tag); if (cls) el.className = cls; return el; }
 function showStatus(msg, color) { if (TURN_IND) { TURN_IND.textContent = msg; TURN_IND.style.color = color || '#333'; } }
 function setRoomCode(code) { currentRoom = code; if (ROOM_CODE_EL) ROOM_CODE_EL.textContent = code || '—'; }
+
+// ----- Game Dialog System -----
+function showGameDialog(title, message, isWin = false) {
+  // Remove existing dialog if any
+  const existingDialog = document.getElementById('game-result-dialog');
+  if (existingDialog) {
+    existingDialog.remove();
+  }
+  
+  const dialog = document.createElement('div');
+  dialog.id = 'game-result-dialog';
+  dialog.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  `;
+  
+  const content = document.createElement('div');
+  content.style.cssText = `
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  `;
+  
+  const titleEl = document.createElement('h2');
+  titleEl.textContent = title;
+  titleEl.style.color = isWin ? '#2e7d32' : '#d84315';
+  titleEl.style.margin = '0 0 15px 0';
+  
+  const messageEl = document.createElement('p');
+  messageEl.textContent = message;
+  messageEl.style.margin = '0 0 20px 0';
+  
+  const button = document.createElement('button');
+  button.textContent = 'Continue';
+  button.style.cssText = `
+    background: var(--purple);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+  `;
+  
+  button.addEventListener('click', () => {
+    dialog.remove();
+    if (isSolo && localGame) {
+      // Reset the game for next round in solo mode
+      startLocalGame(localGame.size);
+    }
+  });
+  
+  content.appendChild(titleEl);
+  content.appendChild(messageEl);
+  content.appendChild(button);
+  dialog.appendChild(content);
+  document.body.appendChild(dialog);
+}
 
 // ----- History REST -----
 async function loadHistory() {
@@ -61,7 +373,7 @@ async function loadHistory() {
       HISTORY_LIST.innerHTML = '<div class="item">No games yet</div>';
       return;
     }
-    HISTORY_LIST.innerHTML = '';
+  HISTORY_LIST.innerHTML = '';
     data.slice(0, 20).forEach(h => {
       const div = e('div', 'item');
       div.textContent = `${(new Date(h.date)).toLocaleString()} — ${h.mode} — ${h.result} — vs ${h.opponent || 'CPU'}`;
@@ -72,8 +384,6 @@ async function loadHistory() {
     console.error('History load error', err);
   }
 }
-
-
 
 async function saveHistory(entry) {
   try {
@@ -201,14 +511,26 @@ function startLocalGame(N) {
     board: Array.from({ length: N }, () => Array.from({ length: N }, () => null)),
     turn: 'X',
     players: [username, 'CPU'],
-    powerups: { [username]: { ...myPowerups } },
+    powerups: { 
+      [username]: { 
+        block: myPowerups.block || 1, 
+        clear: myPowerups.clear || 1 
+      } 
+    },
     blocked: false,
     clear_mode: null
   };
   mySymbol = 'X';
   setRoomCode('LOCAL');
+  
+  // Hide chat section for solo mode
+  toggleChatSection(false);
+  
   renderFromState(localGame);
   showStatus("Your turn (you are X)", '#4CAF50');
+  
+  // Update player symbol display
+  if (PLAYER_SYMBOL_EL) PLAYER_SYMBOL_EL.textContent = `You are: X`;
 }
 
 // handle click (both solo and multiplayer)
@@ -242,20 +564,19 @@ async function handleCellClick(r, c) {
     // Check for player's win
     const winlen = getWinLen(localGame.size);
     if (checkWinnerLocal(localGame.board, mySymbol, winlen)) {
-      // render the winning move (already rendered) then save & disable after short delay
       showStatus("You win!", '#2e7d32');
+      showGameDialog('🎉 You Won!', `Congratulations ${username}! You won against the CPU!`, true);
+      updateStats('win');
       await saveHistory({ username, opponent: 'CPU', mode: 'solo', result: 'win', date: new Date().toISOString(), board_size: localGame.size });
-      // keep board visible then end game
-      setTimeout(() => { localGame = null; }, 350);
       return;
     }
 
     // Check draw
     if (isBoardFullLocal(localGame.board)) {
-      renderFromState(localGame);
       showStatus("Draw", '#555');
+      showGameDialog('🤝 Draw!', 'The game ended in a draw. Well played!', false);
+      updateStats('draw');
       await saveHistory({ username, opponent: 'CPU', mode: 'solo', result: 'draw', date: new Date().toISOString(), board_size: localGame.size });
-      setTimeout(() => { localGame = null; }, 350);
       return;
     }
 
@@ -277,8 +598,9 @@ async function handleCellClick(r, c) {
       const mv = chooseAIMove(localGame.board, 'O');
       if (!mv) {
         showStatus("Draw", '#555');
+        showGameDialog('🤝 Draw!', 'The game ended in a draw. Well played!', false);
+        updateStats('draw');
         await saveHistory({ username, opponent: 'CPU', mode: 'solo', result: 'draw', date: new Date().toISOString(), board_size: localGame.size });
-        setTimeout(() => localGame = null, 350);
         return;
       }
       const [rr, cc] = mv;
@@ -288,15 +610,17 @@ async function handleCellClick(r, c) {
       // Check CPU win
       if (checkWinnerLocal(localGame.board, 'O', winlen)) {
         showStatus("CPU wins", '#b00020');
+        showGameDialog('😢 CPU Wins', 'The AI outsmarted you this time. Try again!', false);
+        updateStats('loss');
         await saveHistory({ username, opponent: 'CPU', mode: 'solo', result: 'loss', date: new Date().toISOString(), board_size: localGame.size });
-        setTimeout(() => localGame = null, 350);
         return;
       }
 
       if (isBoardFullLocal(localGame.board)) {
         showStatus("Draw", '#555');
+        showGameDialog('🤝 Draw!', 'The game ended in a draw. Well played!', false);
+        updateStats('draw');
         await saveHistory({ username, opponent: 'CPU', mode: 'solo', result: 'draw', date: new Date().toISOString(), board_size: localGame.size });
-        setTimeout(() => localGame = null, 350);
         return;
       }
 
@@ -310,7 +634,7 @@ async function handleCellClick(r, c) {
   }
 
   // Multiplayer path: send move to server
-  if (!currentRoom) return;
+  if (!currentRoom || currentRoom === 'LOCAL') return;
   socket.emit('make_move', { room: currentRoom, x: r, y: c, username });
 }
 
@@ -330,34 +654,46 @@ function usePowerUp(power) {
     const ups = localGame.powerups[username] || { block: 0, clear: 0 };
     if ((ups[power] || 0) <= 0) return alert('No power-ups left');
     ups[power] -= 1;
+    
+    // Update global power-up counts
+    myPowerups[power] = ups[power];
+    
     if (power === 'clear') {
       localGame.clear_mode = username;
-      alert('Click a filled cell to clear it.');
+      showStatus("Clear mode activated - click an occupied cell", '#FF9800');
     } else if (power === 'block') {
-      // set blocked flag so CPU's next turn is skipped
       localGame.blocked = true;
-      alert('CPU will be blocked on its next turn.');
+      showStatus("CPU will be blocked next turn!", '#4CAF50');
     }
     renderFromState(localGame);
     return;
   }
 
   // multiplayer: notify server
-  if (!currentRoom) return alert('Not in a room');
+  if (!currentRoom || currentRoom === 'LOCAL') return alert('Not in a room');
   socket.emit('use_power_up', { room: currentRoom, power_up: power, username });
 }
 
 // ----- Socket.IO (multiplayer) handlers -----
 if (socket) {
   socket.on('connect', () => {
-    socket.emit('join_game', { username, board_size: boardSize, room: roomCode || null });
+    if (mode !== 'solo') {
+      socket.emit('join_game', { username, board_size: boardSize, room: roomCode || null });
+    }
   });
 
   socket.on('joined_room', (data) => {
     setRoomCode(data.room);
+    
+    // Show chat section for multiplayer
+    if (data.room !== 'LOCAL') {
+      toggleChatSection(true);
+    }
   });
 
   socket.on('game_update', (game) => {
+    if (mode === 'solo') return;
+    
     // switch to multiplayer mode
     isSolo = false;
     // set symbol
@@ -379,16 +715,21 @@ if (socket) {
   socket.on('game_over', async (data) => {
     if (data.status === 'win') {
       if (data.winner === username) {
-        alert('🎉 You WON!');
-        // await saveHistory({ username, opponent: data.loser || 'opponent', mode:'multiplayer', result:'win', date: new Date().toISOString(), board_size: boardSize });
+        showGameDialog('🎉 You Won!', `Congratulations! You won against ${data.loser || 'opponent'}!`, true);
+        updateStats('win');
       } else {
-        alert(`😢 You lost. Winner: ${data.winner}`);
-        // await saveHistory({ username, opponent: data.winner || 'opponent', mode:'multiplayer', result:'loss', date: new Date().toISOString(), board_size: boardSize });
+        showGameDialog('😢 You Lost', `Better luck next time! ${data.winner} won this round.`, false);
+        updateStats('loss');
       }
     } else if (data.status === 'draw') {
-      alert("🤝 It's a draw!");
-      // await saveHistory({ username, opponent: 'opponent', mode:'multiplayer', result:'draw', date: new Date().toISOString(), board_size: boardSize });
+      showGameDialog('🤝 Draw!', 'The game ended in a draw. Well played both!', false);
+      updateStats('draw');
     }
+  });
+
+  // New game request handler
+  socket.on('new_game_requested', (data) => {
+    showNewGameConfirmation(data.requested_by);
   });
 
   socket.on('chat_update', (data) => appendChatLine(data.username, data.message));
@@ -415,7 +756,7 @@ function sendChat() {
   if (isSolo) {
     appendChatLine(username, v);
   } else {
-    if (!currentRoom) return alert('Not connected to a room');
+    if (!currentRoom || currentRoom === 'LOCAL') return alert('Not connected to a room');
     socket.emit('chat_message', { room: currentRoom, username, message: v });
   }
   CHAT_INPUT.value = '';
@@ -423,10 +764,14 @@ function sendChat() {
 
 // ----- Controls: new game, power buttons, history refresh -----
 if (NEW_GAME_BTN) NEW_GAME_BTN.addEventListener('click', () => {
-  if (isSolo) startLocalGame(boardSize);
-  else {
-    if (!currentRoom) return alert('Not in a room');
-    socket.emit('new_game', { room: currentRoom });
+  if (isSolo) {
+    // For solo mode, just reset immediately with power-ups
+    myPowerups = { block: 1, clear: 1 }; // Reset power-ups
+    startLocalGame(boardSize);
+  } else {
+    if (!currentRoom || currentRoom === 'LOCAL') return alert('Not in a room');
+    // For multiplayer, request confirmation from other player
+    socket.emit('request_new_game', { room: currentRoom, username });
   }
 });
 if (REFRESH_HISTORY_BTN) REFRESH_HISTORY_BTN.addEventListener('click', () => loadHistory());
@@ -436,16 +781,11 @@ if (POWER_CLEAR_BTN) POWER_CLEAR_BTN.addEventListener('click', () => usePowerUp(
 // ----- Initialization -----
 function init() {
   BOARD_LABEL && (BOARD_LABEL.textContent = boardSize);
-  // if (roomCode === null || roomCode === 'null' || roomCode === '') {
-  //   // default to solo mode on load
-  //   startLocalGame(Number(boardSize));
-  // } else {
-  //   // join multiplayer room
-  //   isSolo = false;
-  //   setRoomCode(roomCode);
-  //   if (socket && socket.connected) socket.emit('join_game', { username, board_size: boardSize, room: roomCode });
-  // }
-  console.log(mode)
+  loadStats(); // Load game statistics
+  setupExitButton(); // Setup exit button functionality
+  
+  console.log("Initializing with mode:", mode);
+  
   if (mode === 'solo') {
     startLocalGame(Number(boardSize));
   } else {

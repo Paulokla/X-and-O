@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, render_template, request, session, redirect, url_for, jsonify
 from flask_socketio import SocketIO, emit, join_room
 import sqlite3
@@ -15,12 +14,9 @@ games = {}
 DB_PATH = 'database.db'
 
 # ---- Database init ----
-
-
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        # c.execute("DROP TABLE IF EXISTS leaderboard;")
         # history: store user's games
         c.execute("""
         CREATE TABLE IF NOT EXISTS history (
@@ -41,37 +37,8 @@ def init_db():
         )""")
         conn.commit()
 
-# def init_db():
-#     with sqlite3.connect(DB_PATH) as conn:
-#         c = conn.cursor()
-        # # history: store user's games
-        # c.execute("""
-        # CREATE TABLE IF NOT EXISTS history (
-        #     id INTEGER PRIMARY KEY AUTOINCREMENT,
-        #     username TEXT,
-        #     opponent TEXT,
-        #     mode TEXT,
-        #     result TEXT,
-        #     board_size INTEGER,
-        #     date TEXT
-        # )""")
-#         # leaderboard
-#         c.execute("""
-#         CREATE TABLE IF NOT EXISTS leaderboard (
-#             username TEXT PRIMARY KEY,
-#             score INTEGER DEFAULT 0,
-#             wins INTEGER DEFAULT 0
-#         )""")
-#         conn.commit()
-
 init_db()
 
-with sqlite3.connect(DB_PATH) as conn:
-    c = conn.cursor()
-    c.execute("PRAGMA table_info(leaderboard);")
-    print(c.fetchall())
-
-# ---- Helpers: DB ----
 def add_history_entry(entry):
     # entry: dict with username, opponent, mode, result, board_size, date
     with sqlite3.connect(DB_PATH) as conn:
@@ -117,8 +84,9 @@ def update_leaderboard(username, points=10):
 def new_empty_board(n):
     return [[None for _ in range(n)] for _ in range(n)]
 
+
+# ---- mapping ----
 def get_win_len(size):
-    # mapping: you can tweak this rule
     if size <= 4:
         return 3
     if size == 5:
@@ -129,7 +97,6 @@ def is_board_full(board):
     return all(cell is not None for row in board for cell in row)
 
 def check_winner(board, symbol, win_len=None):
-    # sliding-window K-in-a-row check
     n = len(board)
     if win_len is None:
         win_len = get_win_len(n)
@@ -185,58 +152,48 @@ def check_winner(board, symbol, win_len=None):
 # ---- Routes ----
 @app.route('/')
 def root():
+    # Clear session and redirect to game page for fresh start
     session.clear()
     return redirect(url_for('game_page'))
-
-# @app.route('/game', methods=['GET', 'POST'])
-# def game_page():
-#     if request.method == 'POST':
-#         username = request.form.get('username', 'Guest').strip() or 'Guest'
-#         board_size = int(request.form.get('board_size', 3) or 3)
-#         # mode: solo or room
-#         mode = request.form.get('mode', 'solo')
-#         room_code = request.form.get('room_code', '').strip() or None
-#         session['username'] = username
-#         session['board_size'] = board_size
-#         session['mode'] = mode
-#         session['room_code'] = room_code
-#         return render_template('game.html', username=username, board_size=board_size, room_code=room_code)
-#     # GET: try session
-#     username = session.get('username', None)
-#     board_size = session.get('board_size', 3)
-#     room_code = session.get('room_code', None)
-#     return render_template('game.html', username=username, board_size=board_size, room_code=room_code)
-
 
 @app.route('/game', methods=['GET', 'POST'])
 def game_page():
     if request.method == 'POST':
-        username = request.form.get('username', 'Guest')
+        username = request.form.get('username', 'Guest').strip()
+        if not username:
+            username = 'Guest'
+            
         board_size = int(request.form.get('board_size', 3))
-        mode = request.form.get('mode', 'solo')  # <-- add this
+        mode = request.form.get('mode', 'solo')
         room_code = request.form.get('room_code', '').strip()
 
+        if mode == 'multiplayer' and not room_code:
+            room_code = str(random.randint(1000, 9999))
+
+        if mode == 'solo':
+            room_code = None
+
+        # Store in session
         session['username'] = username
         session['board_size'] = board_size
         session['mode'] = mode
-        session['room_code'] = room_code if room_code else None
+        session['room_code'] = room_code
 
         return render_template(
             'game.html',
             username=username,
             board_size=board_size,
-            mode=mode,                          # <-- pass to template
-            room_code=room_code if room_code else None
+            mode=mode,
+            room_code=room_code
         )
-        
-    # if 'username' not in session:
-    #     return redirect(url_for('game_page'))
     
     # GET request - check if user has session
-    username = session.get('username', None)
+    username = session.get('username')
     board_size = session.get('board_size', 3)
     mode = session.get('mode', 'solo')
-    room_code = session.get('room_code', None)
+    room_code = session.get('room_code')
+    
+    # If no session exists, show the login form
     return render_template(
         'game.html',
         username=username,
@@ -245,6 +202,10 @@ def game_page():
         room_code=room_code
     )
 
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('game_page'))
 
 # History endpoints (REST)
 @app.route('/history', methods=['GET', 'POST'])
@@ -286,12 +247,14 @@ def handle_join(data):
     requested_room = data.get('room')
     room = None
 
-    # if requested_room equals 'LOCAL' we do not create server room (solo mode)
-    if requested_room and requested_room != 'LOCAL':
-        room = requested_room
+    if requested_room is None or requested_room == 'null' or requested_room == '':
+        emit('joined_room', {'room': 'LOCAL'})
+        return
+    elif requested_room == 'LOCAL':
+        emit('joined_room', {'room': 'LOCAL'})
+        return
     else:
-        # if None -> create a random room
-        room = str(random.randint(1000, 9999))
+        room = requested_room
 
     join_room(room)
 
@@ -306,7 +269,8 @@ def handle_join(data):
             'size': size,
             'blocked': False,
             'blocked_player': None,
-            'clear_mode': None
+            'clear_mode': None,
+            'new_game_requested_by': None  # Track who requested new game
         }
         print(f"[room {room}] created by {username}")
     else:
@@ -330,10 +294,12 @@ def handle_move(data):
     data: { room, x, y, username }
     """
     room = data.get('room')
+    if room == 'LOCAL':
+        return
+        
     x = int(data.get('x'))
     y = int(data.get('y'))
     username = data.get('username')
-    # print(username)
 
     if room not in games:
         emit('game_message', {'message': 'Game room not found.'}, room=request.sid)
@@ -382,8 +348,6 @@ def handle_move(data):
         return
     expected_player = game['players'][player_index]
     if expected_player != username:
-        # not this user's turn
-        # Silently ignore invalid clicks to avoid spamming
         return
 
     # place move if empty
@@ -443,6 +407,9 @@ def handle_powerup(data):
     power_up in ('block','clear')
     """
     room = data.get('room')
+    if room == 'LOCAL':
+        return
+        
     power = data.get('power_up')
     username = data.get('username')
 
@@ -482,29 +449,84 @@ def handle_powerup(data):
 
     emit('game_update', game, room=room)
 
+@socketio.on('request_new_game')
+def handle_new_game_request(data):
+    """
+    Handle new game request - ask other player for confirmation
+    """
+    room = data.get('room')
+    username = data.get('username')
+    
+    if room not in games or room == 'LOCAL':
+        return
+        
+    game = games[room]
+    
+    # Set who requested the new game
+    game['new_game_requested_by'] = username
+    
+    # Ask other player for confirmation
+    emit('new_game_requested', {'requested_by': username}, room=room, skip_sid=request.sid)
+    emit('game_message', {'message': f'{username} wants to start a new game. Waiting for confirmation...'}, room=room)
+
+@socketio.on('confirm_new_game')
+def handle_confirm_new_game(data):
+    """
+    Handle new game confirmation from both players
+    """
+    room = data.get('room')
+    username = data.get('username')
+    
+    if room not in games or room == 'LOCAL':
+        return
+        
+    game = games[room]
+    
+    # Reset the game board and power-ups
+    size = game['size']
+    game['board'] = new_empty_board(size)
+    game['turn'] = 'X'
+    game['blocked'] = False
+    game['blocked_player'] = None
+    game['clear_mode'] = None
+    game['new_game_requested_by'] = None
+    
+    # Reset power-ups for all players
+    for player in game['players']:
+        game['powerups'][player] = {'block': 1, 'clear': 1}
+    
+    emit('game_update', game, room=room)
+    emit('game_message', {'message': 'New game started! Power-ups have been reset.'}, room=room)
+
+@socketio.on('cancel_new_game')
+def handle_cancel_new_game(data):
+    """
+    Handle cancellation of new game request
+    """
+    room = data.get('room')
+    username = data.get('username')
+    
+    if room not in games or room == 'LOCAL':
+        return
+        
+    game = games[room]
+    game['new_game_requested_by'] = None
+    
+    emit('game_message', {'message': f'{username} cancelled the new game request.'}, room=room)
+
 @socketio.on('chat_message')
 def handle_chat(data):
     room = data.get('room')
+    if room == 'LOCAL':
+        return
+        
     username = data.get('username')
     message = data.get('message')
     msg = {'username': username, 'message': message}
     emit('chat_update', msg, room=room)
     print(f"[chat][{room}] {username}: {message}")
 
-@socketio.on('new_game')
-def handle_new_game(data):
-    room = data.get('room')
-    if room not in games:
-        return
-    size = games[room]['size']
-    games[room]['board'] = new_empty_board(size)
-    games[room]['turn'] = 'X'
-    # reset powerups? keep them as-is
-    emit('game_update', games[room], room=room)
-    emit('game_message', {'message':'Game reset by host'}, room=room)
-
 # ---- Run ----
 if __name__ == '__main__':
-    # For local debugging
     print("Starting Flask + SocketIO server on http://127.0.0.1:5000")
     socketio.run(app, host='127.0.0.1', port=5000, debug=True)
