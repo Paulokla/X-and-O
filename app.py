@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, session, redirect, url_for, j
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import sqlite3
 import random
-import eventlet
+import gevent
 import os
 import datetime
 import logging
@@ -11,8 +11,8 @@ import json
 
 app = Flask(__name__)
 
-# Use eventlet for better WebSocket support
-async_mode = 'eventlet'
+# Use gevent for better WebSocket support
+async_mode = 'gevent'
 app.config['SECRET_KEY'] = 'i love python'
 
 # Configure error logging
