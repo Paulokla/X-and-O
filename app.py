@@ -2,7 +2,6 @@ from flask import Flask, render_template, request, session, redirect, url_for, j
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import sqlite3
 import random
-import gevent
 import os
 import datetime
 import logging
@@ -11,8 +10,8 @@ import json
 
 app = Flask(__name__)
 
-# Use gevent for better WebSocket support
-async_mode = 'gevent'
+# Use threading mode for better compatibility
+async_mode = 'None'
 app.config['SECRET_KEY'] = 'i love python'
 
 # Configure error logging
@@ -37,15 +36,15 @@ def setup_logging():
 
 setup_logging()
 
-# Configure SocketIO with better settings for Render
+# Configure SocketIO with threading for maximum compatibility
 socketio = SocketIO(
     app,
     async_mode=async_mode,
     cors_allowed_origins="*",
     ping_timeout=60,
     ping_interval=25,
-    logger=True,
-    engineio_logger=True
+    logger=False,
+    engineio_logger=False  # Disabled for cleaner logs
 )
 
 # In-memory games (replace with Redis in production)
@@ -600,14 +599,12 @@ def handle_move(data):
         log_error("MOVE_ERROR", f"Error processing move in room {data.get('room')}", str(e))
         emit('game_message', {'message': 'Error processing move'}, room=request.sid)
 
-# ... (rest of your socket handlers with similar error handling)
-
 if not os.path.exists('logs'):
     os.makedirs('logs')
 
 # ---- Run ----
 if __name__ == '__main__':
-    print("Starting Flask + SocketIO server on http://127.0.0.1:5000")
+    print("Starting Flask + SocketIO server")
     port = int(os.environ.get('PORT', 5000))
     debug_mode = os.environ.get('DEBUG', 'False').lower() == 'true'
         
