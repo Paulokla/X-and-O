@@ -43,6 +43,161 @@ let gameStats = {          // game statistics
   streak: 0
 };
 
+// ----- Session Recovery -----
+function setupSessionRecovery() {
+  // Check if we have a username and are in multiplayer mode
+  if (username && mode === 'multiplayer' && (!roomCode || roomCode === 'null')) {
+    attemptSessionRecovery();
+  }
+}
+
+async function attemptSessionRecovery() {
+  try {
+    const response = await fetch(`/recover-session?username=${encodeURIComponent(username)}`);
+    if (response.ok) {
+      const sessionData = await response.json();
+      if (sessionData.room_code && sessionData.room_code !== 'LOCAL') {
+        // Show recovery dialog
+        showSessionRecoveryDialog(sessionData);
+      }
+    }
+  } catch (error) {
+    console.log('No saved session found or error recovering:', error);
+  }
+}
+
+function showSessionRecoveryDialog(sessionData) {
+  const dialog = document.createElement('div');
+  dialog.id = 'session-recovery-dialog';
+  dialog.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  `;
+  
+  const content = document.createElement('div');
+  content.style.cssText = `
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    text-align: center;
+    max-width: 400px;
+    width: 90%;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  `;
+  
+  const titleEl = document.createElement('h2');
+  titleEl.textContent = 'Game Session Found!';
+  titleEl.style.color = '#6b35b7';
+  titleEl.style.margin = '0 0 15px 0';
+  
+  const messageEl = document.createElement('p');
+  messageEl.textContent = `We found your previous game session in room ${sessionData.room_code}. Would you like to rejoin?`;
+  messageEl.style.margin = '0 0 20px 0';
+  
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.cssText = `
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  `;
+  
+  const yesButton = document.createElement('button');
+  yesButton.textContent = 'Yes, Rejoin Game';
+  yesButton.style.cssText = `
+    background: #2e7d32;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+  `;
+  
+  const noButton = document.createElement('button');
+  noButton.textContent = 'No, Start New Game';
+  noButton.style.cssText = `
+    background: #d84315;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+  `;
+  
+  yesButton.addEventListener('click', () => {
+    // Rejoin the room
+    roomCode = sessionData.room_code;
+    boardSize = sessionData.board_size;
+    mode = sessionData.mode;
+    
+    // Update session and reconnect
+    updateSessionAndReconnect(sessionData);
+    dialog.remove();
+  });
+  
+  noButton.addEventListener('click', () => {
+    // Clear the saved session and start fresh
+    clearSavedSession();
+    dialog.remove();
+  });
+  
+  // Also close dialog when clicking outside
+  dialog.addEventListener('click', (e) => {
+    if (e.target === dialog) {
+      clearSavedSession();
+      dialog.remove();
+    }
+  });
+  
+  buttonContainer.appendChild(noButton);
+  buttonContainer.appendChild(yesButton);
+  
+  content.appendChild(titleEl);
+  content.appendChild(messageEl);
+  content.appendChild(buttonContainer);
+  dialog.appendChild(content);
+  document.body.appendChild(dialog);
+}
+
+function updateSessionAndReconnect(sessionData) {
+  // Update the room code display
+  setRoomCode(sessionData.room_code);
+  
+  // Update the board size label if needed
+  if (BOARD_LABEL) {
+    BOARD_LABEL.textContent = sessionData.board_size;
+  }
+  
+  // Reconnect to the room
+  if (socket && socket.connected) {
+    socket.emit('join', { 
+      username, 
+      board_size: sessionData.board_size, 
+      room: sessionData.room_code 
+    });
+  }
+  
+  // Show reconnection status
+  showStatus("Rejoining game...", '#FF9800');
+}
+
+async function clearSavedSession() {
+  try {
+    await fetch('/logout', { method: 'GET' });
+  } catch (error) {
+    console.log('Error clearing session:', error);
+  }
+}
+
 // ----- Exit Game Functionality -----
 function setupExitButton() {
   if (EXIT_BTN) {
@@ -122,6 +277,9 @@ function showExitConfirmation() {
     if (!isSolo && currentRoom && currentRoom !== 'LOCAL' && socket) {
       socket.emit('leave_room', { room: currentRoom, username });
     }
+    
+    // Clear saved session
+    clearSavedSession();
     
     // Redirect to logout endpoint to clear session
     window.location.href = '/logout';
@@ -678,7 +836,7 @@ function usePowerUp(power) {
 if (socket) {
   socket.on('connect', () => {
     if (mode !== 'solo') {
-      socket.emit('join_game', { username, board_size: boardSize, room: roomCode || null });
+      socket.emit('join', { username, board_size: boardSize, room: roomCode || null });
     }
   });
 
@@ -732,6 +890,22 @@ if (socket) {
     showNewGameConfirmation(data.requested_by);
   });
 
+  // Error handlers
+  socket.on('join_error', (data) => {
+    alert('Join error: ' + (data.message || 'Room is full'));
+    window.location.href = '/game';
+  });
+
+  socket.on('connect_error', (error) => {
+    console.error('Connection error:', error);
+    showStatus("Connection failed", '#b00020');
+  });
+
+  socket.on('disconnect', (reason) => {
+    console.log('Disconnected:', reason);
+    showStatus("Disconnected", '#b00020');
+  });
+
   socket.on('chat_update', (data) => appendChatLine(data.username, data.message));
   socket.on('power_up_error', (data) => alert(data.message));
   socket.on('game_message', (data) => appendChatSystem(data.message || ''));
@@ -783,6 +957,7 @@ function init() {
   BOARD_LABEL && (BOARD_LABEL.textContent = boardSize);
   loadStats(); // Load game statistics
   setupExitButton(); // Setup exit button functionality
+  setupSessionRecovery(); // Setup session recovery
   
   console.log("Initializing with mode:", mode);
   
@@ -792,9 +967,11 @@ function init() {
     isSolo = false;
     setRoomCode(roomCode);
     if (socket && socket.connected) {
-      socket.emit('join_game', { username, board_size: boardSize, room: roomCode || null });
+      socket.emit('join', { username, board_size: boardSize, room: roomCode || null });
     }
   }
   loadHistory();
 }
+
+// Start the game
 init();
