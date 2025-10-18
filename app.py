@@ -11,7 +11,7 @@ import json
 app = Flask(__name__)
 
 # Use threading mode for better compatibility
-async_mode = 'None'
+async_mode = 'threading'
 app.config['SECRET_KEY'] = 'i love python'
 
 # Configure error logging
